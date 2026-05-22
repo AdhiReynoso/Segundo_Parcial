@@ -10,90 +10,119 @@ app.use(express.json());
 
 // RUTA DE PRUEBA
 app.get('/hola', (req, res) => {
-  res.send('¡Hola mundo desde mi laptop Asus con Debian!');
+    res.send('¡Hola mundo desde la API!');
 });
 
-// 1. OBTENER PRODUCTOS (GET)
+// RUTA DE PRODUCTOS (VISTA ESTÉTICA)
 app.get('/productos', async (req, res) => {
-  try {
-    const resultado = await pool.query('SELECT * FROM productos ORDER BY id ASC');
-    res.json(resultado.rows);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
+    try {
+        // Hacemos la consulta a la base de datos MariaDB
+        const [rows] = await pool.query('SELECT * FROM productos');
 
-// 2. CREAR PRODUCTO (POST)
-app.post('/productos', async (req, res) => {
-  try {
-    const { nombre, precio } = req.body;
-    if (!nombre || !precio) {
-      return res.status(400).json({ error: "Nombre y precio son obligatorios" });
+        // Construimos las filas de la tabla dinámicamente con los datos mapeados
+        const filasTabla = rows.map(p => `
+            <tr>
+                <td>${p.id}</td>
+                <td><span class="badge-producto">${p.nombre}</span></td>
+                <td class="precio">$${Number(p.precio).toLocaleString('es-MX')}</td>
+            </tr>
+        `).join('');
+
+        // Enviamos el diseño HTML con estilos CSS estéticos
+        res.send(`
+            <!DOCTYPE html>
+            <html lang="es">
+            <head>
+                <meta charset="UTF-8">
+                <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                <title>Panel de Productos</title>
+                <style>
+                    body {
+                        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+                        background-color: #f4f7f6;
+                        color: #333;
+                        margin: 0;
+                        padding: 40px;
+                        display: flex;
+                        justify-content: center;
+                    }
+                    .container {
+                        width: 100%;
+                        max-width: 800px;
+                        background: white;
+                        padding: 30px;
+                        border-radius: 12px;
+                        box-shadow: 0 4px 15px rgba(0,0,0,0.05);
+                    }
+                    h1 {
+                        color: #2c3e50;
+                        font-size: 24px;
+                        margin-bottom: 20px;
+                        border-bottom: 2px solid #eef2f3;
+                        padding-bottom: 10px;
+                    }
+                    table {
+                        width: 100%;
+                        border-collapse: collapse;
+                        margin-top: 10px;
+                    }
+                    th {
+                        background-color: #34495e;
+                        color: white;
+                        text-align: left;
+                        padding: 12px 15px;
+                        font-size: 14px;
+                        text-transform: uppercase;
+                        letter-spacing: 0.5px;
+                    }
+                    td {
+                        padding: 14px 15px;
+                        border-bottom: 1px solid #eef2f3;
+                        color: #4f5f6f;
+                        font-size: 15px;
+                    }
+                    tr:hover {
+                        background-color: #f8fafb;
+                    }
+                    .badge-producto {
+                        background-color: #e8f4fd;
+                        color: #1da1f2;
+                        padding: 4px 8px;
+                        border-radius: 6px;
+                        font-weight: 500;
+                    }
+                    .precio {
+                        font-weight: bold;
+                        color: #27ae60;
+                    }
+                </style>
+            </head>
+            <body>
+                <div class="container">
+                    <h1>📦 Inventario de Productos</h1>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Nombre del Producto</th>
+                                <th>Precio</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${filasTabla.length > 0 ? filasTabla : '<tr><td colspan="3" style="text-align:center;">No hay productos registrados</td></tr>'}
+                        </tbody>
+                    </table>
+                </div>
+            </body>
+            </html>
+        `);
+    } catch (error) {
+        console.error(error);
+        res.status(500).send('Error interno del servidor');
     }
-    const nuevo = await pool.query(
-      'INSERT INTO productos (nombre, precio) VALUES ($1, $2) RETURNING *',
-      [nombre, precio]
-    );
-    res.status(201).json(nuevo.rows[0]);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
 });
 
-// 3. ACTUALIZAR TODO (PUT)
-app.put('/productos/:id', async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { nombre, precio } = req.body;
-    const resultado = await pool.query(
-      'UPDATE productos SET nombre = $1, precio = $2 WHERE id = $3 RETURNING *',
-      [nombre, precio, id]
-    );
-    if (resultado.rows.length === 0) {
-      return res.status(404).json({ error: "Producto no encontrado" });
-    }
-    res.json({ mensaje: "Actualizado por completo", producto: resultado.rows[0] });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// 4. ACTUALIZACIÓN PARCIAL (PATCH)
-app.patch('/productos/:id', async (req, res) => {
-  const { id } = req.params;
-  const campos = req.body;
-  if (Object.keys(campos).length === 0) {
-    return res.status(400).json({ error: "No enviaste campos para actualizar" });
-  }
-  try {
-    const llaves = Object.keys(campos);
-    const valores = Object.values(campos);
-    const setQuery = llaves.map((llave, index) => `${llave} = $${index + 1}`).join(', ');
-    const query = `UPDATE productos SET ${setQuery} WHERE id = $${llaves.length + 1} RETURNING *`;
-    const resultado = await pool.query(query, [...valores, id]);
-    if (resultado.rows.length === 0) {
-      return res.status(404).json({ error: "Producto no encontrado" });
-    }
-    res.json({ mensaje: "Modificado parcialmente", producto: resultado.rows[0] });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// 5. ELIMINAR (DELETE)
-app.delete('/productos/:id', async (req, res) => {
-  try {
-    const { id } = req.params;
-    const resultado = await pool.query('DELETE FROM productos WHERE id = $1 RETURNING *', [id]);
-    if (resultado.rows.length === 0) {
-      return res.status(404).json({ error: "No se encontró el producto" });
-    }
-    res.json({ mensaje: "Producto eliminado correctamente" });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
+// Inicializar el servidor en el puerto configurado
 app.listen(PORT, () => {
-  console.log(`🚀 Servidor corriendo en http://localhost:${PORT}`);
+    console.log(\`🚀 Servidor corriendo en http://localhost:${PORT}\`);
 });
